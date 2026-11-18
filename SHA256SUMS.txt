@@ -1,0 +1,3 @@
+ce51e849132ea5ae10cf878751cb1d297fedcf099f13b18dfb16022dd0d637f3  DaejeonFairCity-Demo-58s-1080p.mp4
+562adb102887e514f529af0406fe3e6663fb880ff84b4acc642adf7c0b336d92  DaejeonFairCity-Web-20261118.zip
+dd6786d1a8ee4ab9406948a52fe71507a82c354cb65f27caf371b10cdd96335e  DaejeonFairCity-Windows-20261118.zip

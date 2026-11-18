@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102523">
+  <title>공정도시 대전</title>
+  <link rel="icon" href="data:,">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: #102523; color: #f9f7ed; font: 15px/1.5 system-ui, "Malgun Gothic", sans-serif; }
+    main { height: 100%; height: 100dvh; display: grid; grid-template-rows: minmax(0,1fr) auto; }
+    .stage { position: relative; min-height: 0; background: #13211e; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
+    .cover { position: absolute; inset: 0; display: flex; align-items: flex-end; padding: clamp(28px,7vw,104px);
+      background: linear-gradient(0deg,rgba(6,28,26,.98),rgba(6,28,26,.60) 35%,rgba(6,28,26,.06) 85%),url("lobby.jpg") center/cover; }
+    [hidden] { display: none !important; }
+    .load { width: min(100%,420px); }
+    h1 { margin: 0 0 18px; font-size: clamp(34px,5vw,70px); font-weight: 700; letter-spacing: -.065em; line-height: 1.1; }
+    .status { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 8px; color: #dfede8; }
+    progress { display: block; width: 100%; height: 4px; border: 0; background: #758984; accent-color: #acf2cf; }
+    progress::-webkit-progress-bar { background: #758984; }
+    progress::-webkit-progress-value { background: #acf2cf; }
+    .pointer-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); margin: 0;
+      color: #fff; background: #162b28ed; border-radius: 4px; padding: 6px 12px; text-align: center; max-width: 94%; width: max-content; font-size: 13px; pointer-events: none; }
+    footer, .keys, .keys span { display: flex; align-items: center; }
+    footer { flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 9px clamp(14px,3vw,48px); border-top: 1px solid #415550; }
+    .actions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+    #case-progress { color: #d5e0da; font-size: 13px; }
+    footer strong { letter-spacing: -.04em; }
+    .keys { flex-wrap: wrap; gap: 6px 17px; color: #d5e0da; font-size: 13px; }
+    .keys span { gap: 5px; }
+    kbd, button { font: inherit; }
+    kbd { color: #f9f7ed; font-weight: 600; }
+    button { border: 1px solid #738c85; border-radius: 4px; background: transparent; color: inherit; padding: 5px 13px; cursor: pointer; }
+    button:focus-visible, button:hover { background: #28423e; }
+    button:disabled { opacity: .55; cursor: default; }
+    @media (max-width: 650px) { .keys { order: 1; width: 100%; } }
+  </style>
+</head>
+<body>
+<main>
+  <section class="stage" aria-label="게임 화면">
+    <canvas id="game" tabindex="0" aria-label="공정도시 대전 게임 화면"></canvas>
+    <div class="cover" id="cover">
+      <div class="load">
+        <h1>공정도시 대전</h1>
+        <p class="status"><span id="status" role="status">도시를 불러오는 중</span><span id="percent"></span></p>
+        <progress id="progress" aria-label="게임 로딩" value="0" max="1"></progress>
+        <button hidden id="retry">다시 불러오기</button>
+      </div>
+    </div>
+    <p class="pointer-hint" role="status" id="pointer-hint" hidden></p>
+  </section>
+  <footer>
+    <strong>공정도시 대전</strong>
+    <div class="keys"><span><kbd>WASD</kbd> 이동</span><span><kbd>마우스</kbd> 시점</span><span><kbd>E</kbd> 상호작용</span><span><kbd>Esc</kbd> 커서 해제</span></div>
+    <div class="actions">
+      <span id="case-progress" role="status" title="업무를 접수하고 조사 단계가 바뀔 때 자동으로 저장합니다."></span>
+      <button id="reset-progress" disabled>진행도 초기화</button>
+      <button id="full" disabled>전체 화면</button>
+    </div>
+  </footer>
+</main>
+<script>
+  const canvas = document.getElementById("game");
+  const cover = document.getElementById("cover");
+  const meter = document.getElementById("progress");
+  const percent = document.getElementById("percent");
+  const statusText = document.getElementById("status");
+  const full = document.getElementById("full");
+  const reset = document.getElementById("reset-progress");
+  const caseProgress = document.getElementById("case-progress");
+  let playerInstance;
+  let progressReceiver;
+  canvas.addEventListener("daejeon-progress", event => {
+    const {receiver, completed, episode} = event.detail;
+    progressReceiver = receiver;
+    reset.disabled = !playerInstance;
+    caseProgress.textContent = episode ? "업무 " + episode + " 진행 중 · 자동 저장" : "완료 " + completed + "/4";
+  });
+  reset.onclick = () => {
+    if (!playerInstance || !progressReceiver || reset.disabled) return;
+    if (!window.confirm("진행 중인 조사와 완료한 업무 기록을 모두 지우고 첫 업무부터 다시 시작할까요?")) return;
+    reset.disabled = true;
+    caseProgress.textContent = "초기화 중";
+    playerInstance.SendMessage(progressReceiver, "ResetProgress");
+    canvas.focus();
+  };
+  const retry = document.getElementById("retry");
+  retry.onclick = () => location.reload();
+  function showError(detail) {
+    console.error(detail);
+    cover.hidden = false;
+    statusText.textContent = "게임을 실행하지 못했습니다. WebGL 2를 지원하는 PC 브라우저에서 다시 열어 주세요.";
+    percent.textContent = "";
+    meter.hidden = true;
+    retry.hidden = false;
+  }
+  // Unity calls requestPointerLock without handling the Promise returned by modern browsers.
+  // A denied lock is recoverable: keep keyboard input working and let the next click retry.
+  const lockHint = document.getElementById("pointer-hint");
+  const requestLock = canvas.requestPointerLock?.bind(canvas);
+  let hintTimer;
+  if (requestLock) {
+    canvas.requestPointerLock = (...args) => {
+      const pending = requestLock(...args);
+      return pending?.catch(() => {
+        lockHint.textContent = "시점 조작을 위해 게임 화면을 클릭하세요. 커서가 고정되지 않으면 일반 브라우저에서 열어 주세요.";
+        lockHint.hidden = false;
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => { lockHint.hidden = true; }, 6000);
+      });
+    };
+    document.addEventListener("pointerlockchange", () => {
+      if (document.pointerLockElement === canvas) lockHint.hidden = true;
+    });
+  }
+  const config = {
+    dataUrl: "Build/Web.data.unityweb",
+    frameworkUrl: "Build/Web.framework.js.unityweb",
+    codeUrl: "Build/Web.wasm.unityweb",
+    streamingAssetsUrl: "StreamingAssets",
+    companyName: "DefaultCompany",
+    productName: "공정도시 대전",
+    productVersion: "0.1.0",
+    devicePixelRatio: 1,
+    autoSyncPersistentDataPath: true
+  };
+  const script = document.createElement("script");
+  script.src = "Build/Web.loader.js";
+  script.onerror = () => showError("Unity 로더를 불러올 수 없습니다.");
+  script.onload = () => {
+    createUnityInstance(canvas, config, progress => {
+      meter.value = progress;
+      percent.textContent = Math.floor(100 * progress) + "%";
+      if (progress >= .9) statusText.textContent = "도시 장면을 준비하는 중";
+    }).then(instance => {
+      cover.hidden = true;
+      canvas.focus();
+      playerInstance = instance;
+      reset.disabled = !progressReceiver;
+      full.disabled = false;
+      full.onclick = () => instance.SetFullscreen(1);
+    }).catch(showError);
+  };
+  if (location.protocol === "file:") {
+    statusText.textContent = "압축을 푼 폴더 안의 Build 폴더를 선택하세요.";
+    meter.hidden = true;
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.setAttribute("webkitdirectory", "");
+    picker.hidden = true;
+    const start = document.createElement("button");
+    start.textContent = "게임 데이터 폴더 선택";
+    cover.querySelector(".load").append(start, picker);
+    start.onclick = () => picker.click();
+    picker.onchange = async () => {
+      if (!picker.files.length) return;
+      const files = new Map(Array.from(picker.files, f => [f.name, f]));
+      const parts = [
+        ["dataUrl", "application/octet-stream"],
+        ["frameworkUrl", "text/javascript"],
+        ["codeUrl", "application/wasm"]
+      ];
+      if (parts.some(([key]) => !files.has(config[key].split("/").pop()))) {
+        statusText.textContent = "선택한 폴더에 게임 데이터가 없습니다. Build 폴더를 다시 선택하세요.";
+        picker.value = "";
+        return;
+      }
+      start.hidden = true;
+      meter.hidden = false;
+      statusText.textContent = "게임 데이터를 준비하는 중";
+      try {
+        for (const [key, type] of parts) {
+          const file = files.get(config[key].split("/").pop());
+          const decompressed = file.stream().pipeThrough(new DecompressionStream("gzip"));
+          const blob = await new Response(decompressed, { headers: { "Content-Type": type } }).blob();
+          config[key] = URL.createObjectURL(blob);
+        }
+        config.cacheControl = () => "no-store";
+        document.body.appendChild(script);
+      } catch (error) {
+        showError(error);
+      }
+    };
+  } else {
+    document.body.appendChild(script);
+  }
+</script>
+</body>
+</html>
